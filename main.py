@@ -11,10 +11,10 @@ start_date = '2010-01-01'
 end_date = '2023-10-01'
 
 # Step 1: Fetch data
-# fetch_stock_data(stock_symbols, start_date, end_date)
+fetch_stock_data(stock_symbols, start_date, end_date)
 
 # Step 2: Preprocess data
-# load_and_preprocess(stock_symbols)
+load_and_preprocess(stock_symbols)
 
 # Step 3: Load processed data
 dfs = []
@@ -22,7 +22,7 @@ for symbol in stock_symbols:
     df = pd.read_csv(f'data/processed/{symbol}_processed.csv', parse_dates=['Date'], index_col='Date')
     dfs.append(df)
 
-# Combine data or process individually
+# # Combine data or process individually
 for symbol, df in zip(stock_symbols, dfs):
     # Prepare data
     time_steps = 60
