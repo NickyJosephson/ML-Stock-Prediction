@@ -6,20 +6,34 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import itertools
 
 # Load environment variables
 load_dotenv()
 
 # Database connection configuration
 DB_HOST = os.getenv("RDS_HOST")
-DB_USER = os.getenv("RDS_USER")
-DB_PASSWORD = os.getenv("RDS_PASSWORD")
+DB_USER = "scraper"
+DB_PASSWORD = "+jVj7CFX7QbXefM"
 DB_NAME = os.getenv("RDS_DATABASE")
 
 # Headers for web requests
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
 }
+
+# Function to load proxies from a file
+def load_proxies(file_path):
+    with open(file_path, "r") as file:
+        proxies = json.load(file)
+        return [{"http": f"http://{proxy['ip']}:{proxy['port']}", "https": f"http://{proxy['ip']}:{proxy['port']}"} for proxy in proxies]
+
+# Load proxies from the provided JSON file
+PROXY_FILE = "proxies.json"  # Replace with the actual path to your proxy file
+PROXIES = load_proxies(PROXY_FILE)
+
+# Round-robin proxy iterator
+proxy_pool = itertools.cycle(PROXIES)
 
 # Function to connect to the database
 def get_db_connection():
@@ -111,16 +125,16 @@ def update_article_in_db(connection, article_id, data):
         connection.commit()
 
 # Process a single article
-def process_article(article):
+def process_article(article, proxy):
     # Create a new database connection for this thread
     connection = get_db_connection()
     try:
         article_id = article["id"]
         url = article["url"]
-        print(f"Processing article ID: {article_id}, URL: {url}")
-        
+        print(f"Processing article ID: {article_id}, URL: {url} with proxy: {proxy}")
+
         # Fetch article content
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        response = requests.get(url, headers=HEADERS, proxies=proxy, timeout=10)
         if response.status_code == 200:
             data = parse_individual_article(response.text)
             update_article_in_db(connection, article_id, data)
@@ -131,12 +145,13 @@ def process_article(article):
     finally:
         # Ensure connection is closed after use
         connection.close()
+
 # Main function
 def main():
     connection = get_db_connection()
     batch_size = 1000
     last_id = 0
-    max_threads = 4
+    max_threads = 10
 
     while True:
         articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
@@ -145,7 +160,10 @@ def main():
 
         # Process articles with multithreading
         with ThreadPoolExecutor(max_threads) as executor:
-            futures = {executor.submit(process_article, article): article for article in articles}
+            futures = {
+                executor.submit(process_article, article, next(proxy_pool)): article
+                for article in articles
+            }
 
             for future in as_completed(futures):
                 article = futures[future]
