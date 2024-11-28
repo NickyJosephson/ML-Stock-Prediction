@@ -111,11 +111,15 @@ def update_article_in_db(connection, article_id, data):
         connection.commit()
 
 # Process a single article
-def process_article(article, connection):
-    article_id = article["id"]
-    url = article["url"]
+def process_article(article):
+    # Create a new database connection for this thread
+    connection = get_db_connection()
     try:
+        article_id = article["id"]
+        url = article["url"]
         print(f"Processing article ID: {article_id}, URL: {url}")
+        
+        # Fetch article content
         response = requests.get(url, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             data = parse_individual_article(response.text)
@@ -124,7 +128,9 @@ def process_article(article, connection):
             print(f"Failed to fetch article {url}, Status Code: {response.status_code}")
     except Exception as e:
         print(f"Error processing article ID {article_id}: {e}")
-
+    finally:
+        # Ensure connection is closed after use
+        connection.close()
 # Main function
 def main():
     connection = get_db_connection()
@@ -139,7 +145,7 @@ def main():
 
         # Process articles with multithreading
         with ThreadPoolExecutor(max_threads) as executor:
-            futures = {executor.submit(process_article, article, connection): article for article in articles}
+            futures = {executor.submit(process_article, article): article for article in articles}
 
             for future in as_completed(futures):
                 article = futures[future]
