@@ -1,14 +1,18 @@
 import requests
-import pandas as pd
+import pymysql
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import os
-
 # Base URL for Yahoo Finance sitemap
 BASE_URL = "https://finance.yahoo.com/sitemap/"
 
-# File to save the data
-CSV_FILE = "json_financial_news.csv"
+# AWS RDS MySQL Configuration
+RDS_CONFIG = {
+    "host": os.getenv("RDS_HOST"),
+    "user": os.getenv("RDS_USER"),
+    "password": os.getenv("RDS_PASSWORD"),
+    "database": os.getenv("RDS_DATABASE"),
+}
 
 # Headers to mimic a browser
 HEADERS = {
@@ -34,16 +38,45 @@ def parse_articles(html_content, date_str):
                 articles.append({"date_published": date_str, "title": title, "url": url})
     return articles
 
-# Load existing data and determine the starting date
-def load_existing_data():
-    if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE)
-        if not df.empty:
-            # Get the latest date in the data
-            last_date = df["date_published"].max()
-            return datetime.strptime(last_date, "%Y_%m_%d"), df
-    # Default to start from a predefined date if no file exists
-    return datetime.strptime("2012_06_01", "%Y_%m_%d"), pd.DataFrame(columns=["date_published", "title"])
+# Connect to RDS MySQL
+def get_db_connection():
+    return pymysql.connect(
+        host=RDS_CONFIG["host"],
+        user=RDS_CONFIG["user"],
+        password=RDS_CONFIG["password"],
+        database=RDS_CONFIG["database"],
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+# Save articles to RDS MySQL
+def save_to_rds(articles):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            for article in articles:
+                sql = """
+                INSERT INTO financial_news (date_published, title, url)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE title = VALUES(title), url = VALUES(url)
+                """
+                cursor.execute(sql, (article["date_published"], article["title"], article["url"]))
+        connection.commit()
+        print(f"Saved {len(articles)} articles to RDS.")
+    finally:
+        connection.close()
+
+# Get the latest date from the database
+def get_start_date():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT MAX(date_published) AS last_date FROM financial_news")
+            result = cursor.fetchone()
+            if result and result["last_date"]:
+                return datetime.strptime(result["last_date"], "%Y-%m-%d")
+    finally:
+        connection.close()
+    return datetime.strptime("2012_06_01", "%Y_%m_%d")
 
 def calculate_start_time(date_str):
     date_obj = datetime.strptime(date_str, "%Y_%m_%d")
@@ -52,7 +85,6 @@ def calculate_start_time(date_str):
 
 # Fetch articles for all dates, handling pagination
 def fetch_all_news(start_date):
-    all_articles = []
     current_date = start_date
     end_date = datetime.now()
     while current_date <= end_date:
@@ -74,8 +106,7 @@ def fetch_all_news(start_date):
                     articles = parse_articles(response.text, date_str)
                     if not articles:  # Break if no articles are found on this page
                         break
-                    save_to_csv(articles)
-                    all_articles.extend(articles)
+                    save_to_rds(articles)
                 else:
                     print(f"Failed to fetch data for {date_str} (start={start_time}), Status Code: {response.status_code}")
                     break
@@ -90,22 +121,8 @@ def fetch_all_news(start_date):
         # Move to the next day
         current_date += timedelta(days=1)
 
-    return all_articles
-
-# Save articles to a CSV file
-def save_to_csv(articles):
-    if os.path.exists(CSV_FILE):
-        existing_df = pd.read_csv(CSV_FILE)
-        new_df = pd.DataFrame(articles)
-        updated_df = pd.concat([existing_df, new_df]).drop_duplicates(subset=["date_published", "title"])
-    else:
-        updated_df = pd.DataFrame(articles)
-    updated_df.to_csv(CSV_FILE, index=False)
-    print(f"Saved {len(articles)} new articles to {CSV_FILE}.")
-
 # Main function
 if __name__ == "__main__":
     print("Fetching Yahoo Finance articles...")
-    start_date, _ = load_existing_data()
-    start_date += timedelta(days=1)  # Start from the next day
+    start_date = get_start_date() + timedelta(days=1)  # Start from the next day
     fetch_all_news(start_date)
