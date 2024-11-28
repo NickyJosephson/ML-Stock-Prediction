@@ -3,17 +3,12 @@ import pymysql
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import os
+from dotenv import load_dotenv
+
 # Base URL for Yahoo Finance sitemap
 BASE_URL = "https://finance.yahoo.com/sitemap/"
 
 # AWS RDS MySQL Configuration
-RDS_CONFIG = {
-    "host": os.getenv("RDS_HOST"),
-    "user": os.getenv("RDS_USER"),
-    "password": os.getenv("RDS_PASSWORD"),
-    "database": os.getenv("RDS_DATABASE"),
-}
-
 # Headers to mimic a browser
 HEADERS = {
     "accept": "*/*",
@@ -23,6 +18,8 @@ HEADERS = {
     "referer": "https://finance.yahoo.com",
     "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 }
+
+load_dotenv()
 
 # Parse the HTML response and extract articles
 def parse_articles(html_content, date_str):
@@ -41,11 +38,12 @@ def parse_articles(html_content, date_str):
 # Connect to RDS MySQL
 def get_db_connection():
     return pymysql.connect(
-        host=RDS_CONFIG["host"],
-        user=RDS_CONFIG["user"],
-        password=RDS_CONFIG["password"],
-        database=RDS_CONFIG["database"],
-        cursorclass=pymysql.cursors.DictCursor,
+        host=os.getenv("RDS_HOST"),
+        port=int(os.getenv("RDS_PORT")),
+        user=os.getenv("RDS_USER"),
+        password=os.getenv("RDS_PASSWORD"),
+        database=os.getenv("RDS_DATABASE"),
+        cursorclass=pymysql.cursors.DictCursor,  # Use DictCursor here
     )
 
 # Save articles to RDS MySQL
@@ -55,7 +53,7 @@ def save_to_rds(articles):
         with connection.cursor() as cursor:
             for article in articles:
                 sql = """
-                INSERT INTO financial_news (date_published, title, url)
+                INSERT INTO articles (date_published, title, url)
                 VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE title = VALUES(title), url = VALUES(url)
                 """
@@ -70,7 +68,7 @@ def get_start_date():
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT MAX(date_published) AS last_date FROM financial_news")
+            cursor.execute("SELECT MAX(date_published) AS last_date FROM articles")
             result = cursor.fetchone()
             if result and result["last_date"]:
                 return datetime.strptime(result["last_date"], "%Y-%m-%d")
