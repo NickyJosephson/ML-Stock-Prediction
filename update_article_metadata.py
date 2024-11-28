@@ -23,10 +23,11 @@ HEADERS = {
 }
 
 # Function to load proxies from a file
-def load_proxies(file_path):
-    with open(file_path, "r") as file:
+def load_proxies(proxy_file):
+    with open(proxy_file, "r") as file:
         proxies = json.load(file)
-        return [{"http": f"http://{proxy['ip']}:{proxy['port']}", "https": f"http://{proxy['ip']}:{proxy['port']}"} for proxy in proxies]
+    # Use the full HTTP and HTTPS values directly
+    return [{"http": proxy["http"], "https": proxy["https"]} for proxy in proxies]
 
 # Load proxies from the provided JSON file
 PROXY_FILE = "proxies.json"  # Replace with the actual path to your proxy file
