@@ -66,15 +66,17 @@ def save_to_rds(articles):
 # Get the latest date from the database
 def get_start_date():
     connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT MAX(date_published) AS last_date FROM articles")
-            result = cursor.fetchone()
-            if result and result["last_date"]:
-                return datetime.strptime(result["last_date"], "%Y-%m-%d")
-    finally:
-        connection.close()
-    return datetime.strptime("2012_06_01", "%Y_%m_%d")
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(date_published) as last_date FROM articles")
+        result = cursor.fetchone()  # Fetch a single dictionary result
+    connection.close()
+
+    if result and result["last_date"]:  # Access the result using dictionary keys
+        # Directly return the datetime.date object as a datetime
+        return datetime.combine(result["last_date"], datetime.min.time())
+    else:
+        # Default to start from a predefined date if no data exists
+        return datetime.strptime("2012-06-01", "%Y-%m-%d")
 
 def calculate_start_time(date_str):
     date_obj = datetime.strptime(date_str, "%Y_%m_%d")
