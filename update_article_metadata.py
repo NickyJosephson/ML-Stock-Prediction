@@ -5,6 +5,7 @@ import json
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables
 load_dotenv()
@@ -38,38 +39,26 @@ def fetch_articles_from_db(connection, last_id, limit=1000):
             (last_id, limit)
         )
         return cursor.fetchall()
-    
-def extract_article_content(html_content):
-    """
-    Extract the main article content from the given HTML content.
-    Handles older articles with specific structures.
-    """
-    soup = BeautifulSoup(html_content, "html.parser")
 
-    # Strategy 1: Extract paragraphs with specific class
+# Extract article content
+def extract_article_content(html_content):
+    soup = BeautifulSoup(html_content, "html.parser")
     paragraphs = soup.find_all("p", class_="col-body mb-4 text-lg md:leading-8 break-words min-w-0")
     if paragraphs:
         return " ".join(paragraph.get_text(strip=True) for paragraph in paragraphs)
-
-    # Strategy 2: Extract all <p> tags as fallback
     generic_paragraphs = soup.find_all("p")
     if generic_paragraphs:
         return " ".join(paragraph.get_text(strip=True) for paragraph in generic_paragraphs)
-
-    # Strategy 3: Default empty content
     return "No article content found."
 
-# Function to parse an individual article
+# Parse an individual article
 def parse_individual_article(html_content):
-    """
-    Parse an individual article and extract all relevant metadata.
-    """
     soup = BeautifulSoup(html_content, "html.parser")
     stock_symbols = []
     keywords = []
     date_published = None
     date_modified = None
-    article_content = extract_article_content(html_content)  # Call updated function
+    article_content = extract_article_content(html_content)
 
     # Extract stock symbols
     ticker_links = soup.find_all("a", {"data-testid": "ticker-container"})
@@ -97,7 +86,7 @@ def parse_individual_article(html_content):
         "article_content": article_content,
     }
 
-# Function to update the article in the database
+# Update the article in the database
 def update_article_in_db(connection, article_id, data):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -121,30 +110,43 @@ def update_article_in_db(connection, article_id, data):
         )
         connection.commit()
 
+# Process a single article
+def process_article(article, connection):
+    article_id = article["id"]
+    url = article["url"]
+    try:
+        print(f"Processing article ID: {article_id}, URL: {url}")
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        if response.status_code == 200:
+            data = parse_individual_article(response.text)
+            update_article_in_db(connection, article_id, data)
+        else:
+            print(f"Failed to fetch article {url}, Status Code: {response.status_code}")
+    except Exception as e:
+        print(f"Error processing article ID {article_id}: {e}")
+
 # Main function
 def main():
     connection = get_db_connection()
     batch_size = 1000
     last_id = 0
+    max_threads = 4
 
     while True:
         articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
         if not articles:
             break
 
-        for article in articles:
-            article_id = article["id"]
-            url = article["url"]
-            try:
-                print(f"Processing article ID: {article_id}, URL: {url}")
-                response = requests.get(url, headers=HEADERS, timeout=10)
-                if response.status_code == 200:
-                    data = parse_individual_article(response.text)
-                    update_article_in_db(connection, article_id, data)
-                else:
-                    print(f"Failed to fetch article {url}, Status Code: {response.status_code}")
-            except Exception as e:
-                print(f"Error processing article ID {article_id}: {e}")
+        # Process articles with multithreading
+        with ThreadPoolExecutor(max_threads) as executor:
+            futures = {executor.submit(process_article, article, connection): article for article in articles}
+
+            for future in as_completed(futures):
+                article = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Error processing article ID {article['id']}: {e}")
 
         last_id = articles[-1]["id"]  # Update last_id to the highest processed ID
 
