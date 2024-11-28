@@ -13,8 +13,8 @@ load_dotenv()
 
 # Database connection configuration
 DB_HOST = os.getenv("RDS_HOST")
-DB_USER = "scraper"
-DB_PASSWORD = "+jVj7CFX7QbXefM"
+DB_USER = os.getenv("RDS_USER")
+DB_PASSWORD = os.getenv("RDS_PASSWORD")
 DB_NAME = os.getenv("RDS_DATABASE")
 
 # Headers for web requests
