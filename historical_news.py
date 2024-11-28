@@ -83,6 +83,7 @@ def calculate_start_time(date_str):
     date_obj = date_obj.replace(hour=9, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     return int(date_obj.timestamp() * 1000)
 
+
 # Fetch articles for all dates, handling pagination
 def fetch_all_news(start_date):
     current_date = start_date
