@@ -158,7 +158,7 @@ def main():
     connection = get_db_connection()
     batch_size = 1000
     last_id = 0
-    max_threads = 15
+    max_threads = 30
 
     while True:
         articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
