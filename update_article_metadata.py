@@ -21,16 +21,19 @@ DB_NAME = os.getenv("RDS_DATABASE")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
 }
-
+PROXY_FILE = 'proxies.json'
 # Function to load proxies from a file
-def load_proxies(proxy_file):
-    with open(proxy_file, "r") as file:
-        proxies = json.load(file)
-    # Use the full HTTP and HTTPS values directly
-    return [{"http": proxy["http"], "https": proxy["https"]} for proxy in proxies]
+def load_proxies(file_path):
+    with open(file_path, "r") as f:
+        proxies = json.load(f)
+        return [
+            {
+                "https": f"https://user-{proxy['user']}:{proxy['pass']}@{proxy['ip']}:{proxy['port']}"
+            }
+            for proxy in proxies
+        ]
 
-# Load proxies from the provided JSON file
-PROXY_FILE = "proxies.json"  # Replace with the actual path to your proxy file
+# Load proxies from file
 PROXIES = load_proxies(PROXY_FILE)
 
 # Round-robin proxy iterator
@@ -133,7 +136,6 @@ def process_article(article, proxy):
         article_id = article["id"]
         url = article["url"]
         print(f"Processing article ID: {article_id}, URL: {url} with proxy: {proxy}")
-
         # Fetch article content
         response = requests.get(url, headers=HEADERS, proxies=proxy, timeout=10)
         if response.status_code == 200:
