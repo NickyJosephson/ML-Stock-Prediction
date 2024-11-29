@@ -141,7 +141,7 @@ def process_article(article, proxy):
         url = article["url"]
         print(f"Processing article ID: {article_id}, URL: {url} with proxy: {proxy}")
         # Fetch article content
-        response = session.get(url, timeout=10)
+        response = session.get(url, proxies=proxy, timeout=10)
         if response.status_code == 200:
             data = parse_individual_article(response.text)
             update_article_in_db(connection, article_id, data)
@@ -158,7 +158,7 @@ def main():
     connection = get_db_connection()
     batch_size = 1000
     last_id = 0
-    max_threads = 50
+    max_threads = 30
 
     while True:
         articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
