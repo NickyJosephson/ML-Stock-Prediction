@@ -21,6 +21,10 @@ DB_NAME = os.getenv("RDS_DATABASE")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
 }
+
+session = requests.Session()
+session.headers.update(HEADERS)
+
 PROXY_FILE = 'proxies.json'
 # Function to load proxies from a file
 def load_proxies(file_path):
@@ -137,7 +141,7 @@ def process_article(article, proxy):
         url = article["url"]
         print(f"Processing article ID: {article_id}, URL: {url} with proxy: {proxy}")
         # Fetch article content
-        response = requests.get(url, headers=HEADERS, proxies=proxy, timeout=10)
+        response = session.get(url, proxies=proxy, timeout=10)
         if response.status_code == 200:
             data = parse_individual_article(response.text)
             update_article_in_db(connection, article_id, data)
