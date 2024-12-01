@@ -186,7 +186,7 @@ def process_article(article, proxy):
 def main():
     batch_size = 300
     last_id = 0
-    max_threads = 15
+    max_threads = 30
 
     while True:
         connection = get_db_connection()
