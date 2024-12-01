@@ -65,26 +65,42 @@ def fetch_articles_from_db(connection, last_id, limit=1000):
 
 # Extract article content
 def extract_article_content(html_content):
+    """
+    Extracts article content from HTML, supporting both older and newer structures.
+    Filters out non-human-readable content and resolves connected-word issues.
+    """
     soup = BeautifulSoup(html_content, "html.parser")
 
+    # Strategy 1: Newer structure with "HTML_TAG_START"
     paragraphs = soup.find_all("p", class_="yf-1pe5jgt")
     if paragraphs:
         content = []
         for paragraph in paragraphs:
             if "<!-- HTML_TAG_START -->" in str(paragraph):
-                text = paragraph.get_text(strip=True)
+                text = paragraph.get_text(" ", strip=True)  # Ensure space between elements
+                # Remove HTML-like structures and filter junk
                 if not re.search(r"<.*?>", text) and len(text) > 30:
+                    # Fix connected-word issues (e.g., "Maduroannounced")
+                    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text)
                     content.append(text)
         if content:
             return " ".join(content)
 
+    # Strategy 2: Handle older structures by targeting specific classes
     paragraphs = soup.find_all("p", class_="col-body mb-4 text-lg md:leading-8 break-words min-w-0")
     if paragraphs:
-        return " ".join(paragraph.get_text(strip=True) for paragraph in paragraphs)
+        content = " ".join(paragraph.get_text(" ", strip=True) for paragraph in paragraphs)
+        # Fix connected-word issues for older structures
+        content = re.sub(r'(\w)([A-Z])', r'\1 \2', content)
+        return content
 
+    # Strategy 3: Generic fallback to extract all <p> tags
     generic_paragraphs = soup.find_all("p")
     if generic_paragraphs:
-        return " ".join(paragraph.get_text(strip=True) for paragraph in generic_paragraphs)
+        content = " ".join(paragraph.get_text(" ", strip=True) for paragraph in generic_paragraphs)
+        # Fix connected-word issues for fallback
+        content = re.sub(r'(\w)([A-Z])', r'\1 \2', content)
+        return content
 
     print("ERROR: NO article content found")
     return None
