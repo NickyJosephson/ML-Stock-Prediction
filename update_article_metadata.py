@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import itertools
+import re
 
 # Load environment variables
 load_dotenv()
@@ -65,13 +66,28 @@ def fetch_articles_from_db(connection, last_id, limit=1000):
 # Extract article content
 def extract_article_content(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
+
+    paragraphs = soup.find_all("p", class_="yf-1pe5jgt")
+    if paragraphs:
+        content = []
+        for paragraph in paragraphs:
+            if "<!-- HTML_TAG_START -->" in str(paragraph):
+                text = paragraph.get_text(strip=True)
+                if not re.search(r"<.*?>", text) and len(text) > 30:
+                    content.append(text)
+        if content:
+            return " ".join(content)
+
     paragraphs = soup.find_all("p", class_="col-body mb-4 text-lg md:leading-8 break-words min-w-0")
     if paragraphs:
         return " ".join(paragraph.get_text(strip=True) for paragraph in paragraphs)
+
     generic_paragraphs = soup.find_all("p")
     if generic_paragraphs:
         return " ".join(paragraph.get_text(strip=True) for paragraph in generic_paragraphs)
-    return "No article content found."
+
+    print("ERROR: NO article content found")
+    return None
 
 # Parse an individual article
 def parse_individual_article(html_content):
@@ -82,14 +98,12 @@ def parse_individual_article(html_content):
     date_modified = None
     article_content = extract_article_content(html_content)
 
-    # Extract stock symbols
     ticker_links = soup.find_all("a", {"data-testid": "ticker-container"})
     for ticker in ticker_links:
         symbol_span = ticker.find("span", class_="symbol")
         if symbol_span:
             stock_symbols.append(symbol_span.text.strip())
 
-    # Extract metadata from JSON-LD script
     script_tag = soup.find("script", type="application/ld+json")
     if script_tag:
         try:
@@ -108,65 +122,67 @@ def parse_individual_article(html_content):
         "article_content": article_content,
     }
 
-# Update the article in the database
-def update_article_in_db(connection, article_id, data):
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE articles
-            SET stock_symbols = %s,
-                keywords = %s,
-                date_published = %s,
-                date_modified = %s,
-                article_content = %s
-            WHERE id = %s
-            """,
-            (
-                json.dumps(data["stock_symbols"]),
-                json.dumps(data["keywords"]),
-                data["date_published"],
-                data["date_modified"],
-                data["article_content"],
-                article_id
-            )
-        )
-        connection.commit()
+# Batch update articles in the database
+def update_articles_in_db(articles_data):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            for article_id, data in articles_data.items():
+                cursor.execute(
+                    """
+                    UPDATE articles
+                    SET stock_symbols = %s,
+                        keywords = %s,
+                        date_published = %s,
+                        date_modified = %s,
+                        article_content = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        json.dumps(data["stock_symbols"]),
+                        json.dumps(data["keywords"]),
+                        data["date_published"],
+                        data["date_modified"],
+                        data["article_content"],
+                        article_id
+                    )
+                )
+            connection.commit()
+    finally:
+        connection.close()
 
 # Process a single article
 def process_article(article, proxy):
-    # Create a new database connection for this thread
-    connection = get_db_connection()
     try:
         article_id = article["id"]
         url = article["url"]
-        # print(f"Processing article ID: {article_id}, URL: {url} with proxy: {proxy}")
         print(f"Processing article ID: {article_id}, URL: {url}")
-        # Fetch article content
         response = session.get(url, proxies=proxy, timeout=10)
         if response.status_code == 200:
-            data = parse_individual_article(response.text)
-            update_article_in_db(connection, article_id, data)
+            return article_id, parse_individual_article(response.text)
         else:
             print(f"Failed to fetch article {url}, Status Code: {response.status_code}")
     except Exception as e:
-        print(f"Error processing article ID {article_id}: {e}")
-    finally:
-        # Ensure connection is closed after use
-        connection.close()
+        print(f"Error processing article ID {article['id']}: {e}")
+    return article["id"], None
 
 # Main function
 def main():
-    connection = get_db_connection()
-    batch_size = 1000
+    batch_size = 300
     last_id = 0
-    max_threads = 5
+    max_threads = 15
 
     while True:
-        articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
+        connection = get_db_connection()
+        try:
+            articles = fetch_articles_from_db(connection, last_id=last_id, limit=batch_size)
+        finally:
+            connection.close()
+
         if not articles:
             break
 
-        # Process articles with multithreading
+        batch_updates = {}
         with ThreadPoolExecutor(max_threads) as executor:
             futures = {
                 executor.submit(process_article, article, next(proxy_pool)): article
@@ -176,13 +192,16 @@ def main():
             for future in as_completed(futures):
                 article = futures[future]
                 try:
-                    future.result()
+                    article_id, data = future.result()
+                    if data:
+                        batch_updates[article_id] = data
                 except Exception as e:
                     print(f"Error processing article ID {article['id']}: {e}")
 
-        last_id = articles[-1]["id"]  # Update last_id to the highest processed ID
+        if batch_updates:
+            update_articles_in_db(batch_updates)
 
-    connection.close()
+        last_id = articles[-1]["id"]
 
 if __name__ == "__main__":
     main()
