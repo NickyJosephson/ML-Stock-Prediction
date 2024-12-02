@@ -1,0 +1,3 @@
+https://www.barrons.com/bol_news_sitemap.xml
+
+^ this is the barron news most recent news sitemap - has a maximum 3 minute delay based on testing

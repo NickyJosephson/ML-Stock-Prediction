@@ -184,7 +184,7 @@ def process_article(article, proxy):
 
 # Main function
 def main():
-    batch_size = 300
+    batch_size = 1000
     last_id = 0
     max_threads = 30
 
