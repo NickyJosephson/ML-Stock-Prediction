@@ -1,0 +1,7 @@
+historical news is the same as multithread_historical - both use the same indexing html page to scrape all of the urls
+
+xml_historical attempts to scrape using the XML indexing, not as efficient
+
+recent_news uses their weird recent news endpoint, not reccomended
+
+update_article_metadata scrapes individual pages, with added multithreading support

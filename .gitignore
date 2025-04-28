@@ -4,3 +4,4 @@ stock-forecast-env/
 .env
 proxies.json
 proxy_test.py
+research/
